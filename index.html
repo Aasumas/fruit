@@ -14,16 +14,32 @@
                 <div class="score">Score: <span id="score">0</span></div>
                 <div class="next-fruit">Next 3: <span id="next-fruit">🍒 🍒 🍓</span></div>
             </div>
+            <div class="limit-container">
+                <label for="maxDropFruit">Max Drop:</label>
+                <select id="maxDropFruit">
+                    <option value="0">🍒 Cherry</option>
+                    <option value="1">🍓 Strawberry</option>
+                    <option value="2">🫐 Blueberry</option>
+                    <option value="3">🍇 Grape</option>
+                    <option value="4" selected>🥝 Kiwi</option>
+                    <option value="5">🍋 Lemon</option>
+                    <option value="6">🍊 Orange</option>
+                    <option value="7">🍎 Apple</option>
+                </select>
+            </div>
         </div>
         
         <div class="game-area">
-            <canvas id="gameCanvas" width="400" height="600"></canvas>
-            <div class="drop-line"></div>
+            <div class="canvas-container">
+                <canvas id="gameCanvas" width="400" height="600"></canvas>
+                <div class="drop-line"></div>
+            </div>
         </div>
         
         <div class="controls">
             <button id="dropBtn">Drop Fruit</button>
             <button id="restartBtn">Restart Game</button>
+            <button id="aiBtn">Toggle AI</button>
         </div>
         
         <div class="game-over" id="gameOver" style="display: none;">
@@ -41,5 +57,6 @@
     </div>
     
     <script src="script.js"></script>
+    <script src="ai.js"></script>
 </body>
 </html>

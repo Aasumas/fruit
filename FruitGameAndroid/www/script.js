@@ -25,15 +25,44 @@ class FruitGame {
         this.isDropping = false;
         this.gameStartTime = Date.now();
         this.maxUnlockedFruit = 2; // Start with first 3 fruits unlocked (0, 1, 2)
-        this.nextFruits = [0, 0, 1]; // Queue of next 3 fruits
+        this.nextFruits = [
+            this.generateNextFruit(),
+            this.generateNextFruit(),
+            this.generateNextFruit()
+        ]; // Queue of next 3 fruits
+        this.dropPoolCap = 4; // Default to Kiwi (index 4)
         this.dangerStartTime = null; // When fruits first crossed the danger line
         this.isDangerMode = false; // Whether we're in danger mode
         this.dangerAlpha = 0; // Alpha for red background fade
         this.fruitAboveLineTime = null; // When fruits first went above line (for delay)
         
+        this.setupResizeObserver();
         this.setupEventListeners();
         this.updateNextFruit();
         this.gameLoop();
+    }
+
+    setupResizeObserver() {
+        const container = document.querySelector('.canvas-container');
+        this.resizeObserver = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                const { width, height } = entry.contentRect;
+                this.handleResize(width, height);
+            }
+        });
+        this.resizeObserver.observe(container);
+    }
+
+    handleResize(width, height) {
+        // Update canvas internal resolution to match display size
+        this.canvas.width = width;
+        this.canvas.height = height;
+        
+        // Clamp drop position to new width
+        this.dropPosition = Math.min(this.dropPosition, this.canvas.width - 25);
+        this.dropPosition = Math.max(25, this.dropPosition);
+        
+        this.updateDropLine();
     }
     
     setupEventListeners() {
@@ -58,6 +87,17 @@ class FruitGame {
         
         document.getElementById('restartBtn').addEventListener('click', () => {
             this.restartGame();
+        });
+
+        // Drop pool limit selector
+        const limitSelector = document.getElementById('maxDropFruit');
+        limitSelector.addEventListener('change', (e) => {
+            this.dropPoolCap = parseInt(e.target.value);
+            // Ensure maxUnlockedFruit is at least the cap
+            if (this.maxUnlockedFruit < this.dropPoolCap) {
+                this.maxUnlockedFruit = this.dropPoolCap;
+            }
+            console.log(`Drop pool capped at: ${FRUITS[this.dropPoolCap].emoji}`);
         });
     }
     
@@ -92,13 +132,37 @@ class FruitGame {
     }
     
     generateNextFruit() {
-        // Only generate fruits from unlocked types
-        return Math.floor(Math.random() * (this.maxUnlockedFruit + 1));
+        // Only generate fruits from unlocked types, capped at the user-selected limit
+        const maxIndex = Math.min(this.maxUnlockedFruit, this.dropPoolCap);
+        return Math.floor(Math.random() * (maxIndex + 1));
     }
     
     updateNextFruit() {
         const nextFruitDisplay = this.nextFruits.map(type => FRUITS[type].emoji).join(' ');
         document.getElementById('next-fruit').textContent = nextFruitDisplay;
+    }
+    
+    // Expose internal state to AI
+    getGameState() {
+        return {
+            canvasWidth: this.canvas.width,
+            canvasHeight: this.canvas.height,
+            fruits: this.fruits.map(f => ({
+                x: f.x,
+                y: f.y,
+                type: f.type,
+                size: f.size,
+                vx: f.vx,
+                vy: f.vy,
+                isSleeping: f.isSleeping
+            })),
+            nextFruitType: this.nextFruits[0],
+            nextFruits: [...this.nextFruits], // Queue of next 3 fruit types
+            isDropping: this.isDropping,
+            gameOver: this.gameOver,
+            score: this.score,
+            danger: this.isDangerMode || this.fruitAboveLineTime !== null
+        };
     }
     
     handleFruitCollisions() {
@@ -237,15 +301,16 @@ class FruitGame {
         // Create new merged fruit (only if not at max level)
         if (fruit1.type < FRUITS.length - 1) {
             const newFruitType = fruit1.type + 1;
-            const newFruit = new Fruit(mergeX, mergeY, newFruitType, this.ctx);
-            newFruit.vx = (fruit1.vx + fruit2.vx) / 4; // Inherit some momentum
-            newFruit.vy = (fruit1.vy + fruit2.vy) / 4;
-            this.fruits.push(newFruit);
             
-            // Unlock new fruit type if needed
-            if (newFruitType > this.maxUnlockedFruit && newFruitType < FRUITS.length) {
-                this.maxUnlockedFruit = newFruitType;
-                console.log(`New fruit unlocked: ${FRUITS[newFruitType].emoji}`);
+            // If it's the final fruit (Coconut), it "vanishes" immediately for points
+            if (newFruitType === FRUITS.length - 1) {
+                console.log("CONGRATULATIONS! Final fruit reached! 🥥");
+                this.createMergeEffect(mergeX, mergeY, true); // True for bigger effect
+            } else {
+                const newFruit = new Fruit(mergeX, mergeY, newFruitType, this.ctx);
+                newFruit.vx = (fruit1.vx + fruit2.vx) / 4; // Inherit some momentum
+                newFruit.vy = (fruit1.vy + fruit2.vy) / 4;
+                this.fruits.push(newFruit);
             }
         }
         
@@ -258,13 +323,13 @@ class FruitGame {
         this.createMergeEffect(mergeX, mergeY);
     }
     
-    createMergeEffect(x, y) {
+    createMergeEffect(x, y, isBig = false) {
         // Simple visual effect - could be enhanced with particles
         this.ctx.save();
         this.ctx.globalAlpha = 0.7;
-        this.ctx.fillStyle = '#FFD700';
+        this.ctx.fillStyle = isBig ? '#FF4500' : '#FFD700'; // Orange-red for big merge
         this.ctx.beginPath();
-        this.ctx.arc(x, y, 30, 0, Math.PI * 2);
+        this.ctx.arc(x, y, isBig ? 100 : 30, 0, Math.PI * 2);
         this.ctx.fill();
         this.ctx.restore();
     }
@@ -328,7 +393,11 @@ class FruitGame {
         this.isDropping = false;
         this.gameStartTime = Date.now(); // Reset game start time
         this.maxUnlockedFruit = 2; // Reset to first 3 fruits
-        this.nextFruits = [0, 0, 1]; // Reset fruit queue
+        this.nextFruits = [
+            this.generateNextFruit(),
+            this.generateNextFruit(),
+            this.generateNextFruit()
+        ]; // Reset fruit queue
         
         // Reset danger mode and background fade
         this.isDangerMode = false;
