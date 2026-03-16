@@ -25,12 +25,12 @@ class FruitGame {
         this.isDropping = false;
         this.gameStartTime = Date.now();
         this.maxUnlockedFruit = 2; // Start with first 3 fruits unlocked (0, 1, 2)
+        this.dropPoolCap = 4; // MUST set this before calling generateNextFruit()
         this.nextFruits = [
             this.generateNextFruit(),
             this.generateNextFruit(),
             this.generateNextFruit()
         ]; // Queue of next 3 fruits
-        this.dropPoolCap = 4; // Default to Kiwi (index 4)
         this.dangerStartTime = null; // When fruits first crossed the danger line
         this.isDangerMode = false; // Whether we're in danger mode
         this.dangerAlpha = 0; // Alpha for red background fade
