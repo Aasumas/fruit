@@ -32,8 +32,8 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          # The web game is in the fruit/ directory
-          path: './fruit'
+          # The web game is at the repository root on GitHub
+          path: '.'
       - name: Deploy to GitHub Pages
         id: deployment
         uses: actions/deploy-pages@v4
