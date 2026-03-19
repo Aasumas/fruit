@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fruit Merge Game</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="game-container">
+        <div class="header">
+            <h1>🍎 Fruit Merge Game 🍊</h1>
+            <div class="score-container">
+                <div class="score">Score: <span id="score">0</span></div>
+                <div class="next-fruit">Next 3: <span id="next-fruit">🍒 🍒 🍓</span></div>
+                <div id="ai-status" style="display: none; font-size: 0.9em; margin-top: 5px; color: #ff6b6b; font-weight: bold;">AI: Planning 50 moves...</div>
+            </div>
+            <div class="limit-container">
+                <label for="maxDropFruit">Max Drop:</label>
+                <select id="maxDropFruit">
+                    <option value="0">🍒 Cherry</option>
+                    <option value="1">🍓 Strawberry</option>
+                    <option value="2">🫐 Blueberry</option>
+                    <option value="3">🍇 Grape</option>
+                    <option value="4" selected>🥝 Kiwi</option>
+                    <option value="5">🍋 Lemon</option>
+                    <option value="6">🍊 Orange</option>
+                    <option value="7">🍎 Apple</option>
+                </select>
+            </div>
+        </div>
+        
+        <div class="game-area">
+            <div class="canvas-container">
+                <canvas id="gameCanvas" width="400" height="600"></canvas>
+                <div class="drop-line"></div>
+            </div>
+        </div>
+        
+        <div class="controls">
+            <button id="dropBtn">Drop Fruit</button>
+            <button id="restartBtn">Restart Game</button>
+            <button id="aiBtn">Toggle AI</button>
+        </div>
+        
+        <div class="game-over" id="gameOver" style="display: none;">
+            <h2>Game Over!</h2>
+            <p>Final Score: <span id="finalScore">0</span></p>
+            <button onclick="restartGame()">Play Again</button>
+        </div>
+        
+        <div class="fruit-guide">
+            <h3>Fruit Evolution</h3>
+            <div class="fruit-chain">
+                <span>🍒</span> → <span>🍓</span> → <span>🫐</span> → <span>🍇</span> → <span>🥝</span> → <span>🍋</span> → <span>🍊</span> → <span>🍎</span> → <span>🍑</span> → <span>🥭</span> → <span>🍍</span> → <span>🥥</span>
+            </div>
+        </div>
+    </div>
+    
+    <script src="script.js"></script>
+    <script src="ai.js"></script>
+</body>
+</html>

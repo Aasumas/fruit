@@ -25,12 +25,9 @@ class FruitGame {
         this.isDropping = false;
         this.gameStartTime = Date.now();
         this.maxUnlockedFruit = 2; // Start with first 3 fruits unlocked (0, 1, 2)
-        this.dropPoolCap = 4; // MUST set this before calling generateNextFruit()
-        this.nextFruits = [
-            this.generateNextFruit(),
-            this.generateNextFruit(),
-            this.generateNextFruit()
-        ]; // Queue of next 3 fruits
+        this.dropPoolCap = 4; // MUST set this before calling initializeQueue()
+        this.nextFruits = [];
+        this.initializeQueue(50);
         this.dangerStartTime = null; // When fruits first crossed the danger line
         this.isDangerMode = false; // Whether we're in danger mode
         this.dangerAlpha = 0; // Alpha for red background fade
@@ -137,8 +134,16 @@ class FruitGame {
         return Math.floor(Math.random() * (maxIndex + 1));
     }
     
+    initializeQueue(count) {
+        for (let i = 0; i < count; i++) {
+            this.nextFruits.push(this.generateNextFruit());
+        }
+    }
+    
     updateNextFruit() {
-        const nextFruitDisplay = this.nextFruits.map(type => FRUITS[type].emoji).join(' ');
+        // Only show first 3 fruits to the player
+        const playerView = this.nextFruits.slice(0, 3);
+        const nextFruitDisplay = playerView.map(type => FRUITS[type].emoji).join(' ');
         document.getElementById('next-fruit').textContent = nextFruitDisplay;
     }
     
@@ -157,7 +162,7 @@ class FruitGame {
                 isSleeping: f.isSleeping
             })),
             nextFruitType: this.nextFruits[0],
-            nextFruits: [...this.nextFruits], // Queue of next 3 fruit types
+            nextFruits: [...this.nextFruits], // Full queue of 50 fruit types for strategic AI
             isDropping: this.isDropping,
             gameOver: this.gameOver,
             score: this.score,
@@ -302,12 +307,6 @@ class FruitGame {
         if (fruit1.type < FRUITS.length - 1) {
             const newFruitType = fruit1.type + 1;
             
-            // Advance unlocked fruits if we hit a new tier
-            if (newFruitType > this.maxUnlockedFruit && newFruitType <= this.dropPoolCap) {
-                this.maxUnlockedFruit = newFruitType;
-                console.log(`NEW FRUIT UNLOCKED: ${FRUITS[newFruitType].emoji} (Index ${newFruitType})`);
-            }
-
             // If it's the final fruit (Coconut), it "vanishes" immediately for points
             if (newFruitType === FRUITS.length - 1) {
                 console.log("CONGRATULATIONS! Final fruit reached! 🥥");
@@ -399,11 +398,8 @@ class FruitGame {
         this.isDropping = false;
         this.gameStartTime = Date.now(); // Reset game start time
         this.maxUnlockedFruit = 2; // Reset to first 3 fruits
-        this.nextFruits = [
-            this.generateNextFruit(),
-            this.generateNextFruit(),
-            this.generateNextFruit()
-        ]; // Reset fruit queue
+        this.nextFruits = [];
+        this.initializeQueue(50);
         
         // Reset danger mode and background fade
         this.isDangerMode = false;

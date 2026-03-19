@@ -114,72 +114,78 @@ class AutoPlayer {
             return canvasWidth / 2;
         }
 
-        let bestScore = -Infinity;
-        let bestX = canvasWidth / 2;
+        // Show thinking status
+        const statusEl = document.getElementById('ai-status');
+        if (statusEl) statusEl.style.display = 'block';
+
+        // Deep Planning Configuration
+        const MAX_PLANNING_DEPTH = 50; // Plan through the WHOLE 50-fruit queue!
+        const BEAM_WIDTH = 1; // Pure greedy best-path for performance
         
-        // Ensure nextFruits contains 3 elements as safely provided via script array
-        if (!nextFruits || nextFruits.length === 0) return canvasWidth / 2;
+        let bestFinalScore = -Infinity;
+        let bestX0 = canvasWidth / 2;
+        
+        if (!nextFruits || nextFruits.length === 0) {
+            if (statusEl) statusEl.style.display = 'none';
+            return canvasWidth / 2;
+        }
         
         const type0 = nextFruits[0];
         const r0 = FRUITS[type0].size / 2;
         const minX0 = r0;
         const maxX0 = canvasWidth - r0;
         
-        // Depth 0: High resolution (step 2 for precision stacking)
-        for (let x0 = minX0; x0 <= maxX0; x0 += 2) {
+        // Root choices (Current fruit)
+        // Using step 10 for the root to allow deeper search without too much lag
+        for (let x0 = minX0; x0 <= maxX0; x0 += 10) { 
             const result0 = this.simulateDrop(x0, type0, fruits, canvasWidth, canvasHeight);
             if (result0.failed) continue;
+
+            let pathScore = result0.score;
+            let currentBoard = result0.fruits;
             
-            let score0 = result0.score;
-            
-            // Depth 1: Medium resolution (step 10)
-            if (nextFruits.length > 1) {
-                let maxScore1 = -Infinity;
-                const type1 = nextFruits[1];
-                const r1 = FRUITS[type1].size / 2;
-                for (let x1 = r1; x1 <= canvasWidth - r1; x1 += 10) {
-                    const result1 = this.simulateDrop(x1, type1, result0.fruits, canvasWidth, canvasHeight);
-                    if (result1.failed) continue;
-                    
-                    let score1 = result1.score;
-                    
-                    // Depth 2: Low resolution (step 20)
-                    if (nextFruits.length > 2) {
-                        let maxScore2 = -Infinity;
-                        const type2 = nextFruits[2];
-                        const r2 = FRUITS[type2].size / 2;
-                        for (let x2 = r2; x2 <= canvasWidth - r2; x2 += 20) {
-                            const result2 = this.simulateDrop(x2, type2, result1.fruits, canvasWidth, canvasHeight);
-                            if (!result2.failed && result2.score > maxScore2) {
-                                maxScore2 = result2.score;
-                            }
-                        }
-                        if (maxScore2 !== -Infinity) {
-                            score1 += maxScore2 * 0.5; // Discount future rewards slightly
-                        }
-                    }
-                    
-                    if (score1 > maxScore1) {
-                        maxScore1 = score1;
+            // Lookahead loop (The "Ultimate" Strategy)
+            for (let d = 1; d < Math.min(nextFruits.length, MAX_PLANNING_DEPTH); d++) {
+                const depthType = nextFruits[d];
+                const depthRadius = FRUITS[depthType].size / 2;
+                let bestDepthResult = null;
+                let bestDepthScore = -Infinity;
+                
+                // For each depth, find the single best move to continue this path
+                // Using step 30 for depth sampling to keep total sims around ~200k
+                for (let xd = depthRadius; xd <= canvasWidth - depthRadius; xd += 30) { 
+                    const resD = this.simulateDrop(xd, depthType, currentBoard, canvasWidth, canvasHeight);
+                    if (!resD.failed && resD.score > bestDepthScore) {
+                        bestDepthScore = resD.score;
+                        bestDepthResult = resD;
                     }
                 }
-                if (maxScore1 !== -Infinity) {
-                     score0 += maxScore1 * 0.8; // Discount earlier future rewards
+                
+                if (bestDepthResult) {
+                    // Accumulate discounted future rewards
+                    pathScore += bestDepthScore * Math.pow(0.95, d); // Slower decay for 50-move plan
+                    currentBoard = bestDepthResult.fruits;
+                } else {
+                    // This path leads to a death eventually
+                    pathScore -= 100000;
+                    break;
                 }
             }
-            
-            // Slightly favor drops closer to the center to break ties natively
-            // instead of dropping on the extreme left always when tying
-            const centerDistance = Math.abs(x0 - (canvasWidth / 2));
-            score0 -= (centerDistance * 0.01);
 
-            if (score0 > bestScore) {
-                bestScore = score0;
-                bestX = x0;
+            // Tie-breaker: center preference
+            const centerDistance = Math.abs(x0 - (canvasWidth / 2));
+            pathScore -= (centerDistance * 0.01);
+
+            if (pathScore > bestFinalScore) {
+                bestFinalScore = pathScore;
+                bestX0 = x0;
             }
         }
         
-        return bestScore !== -Infinity ? this.clamp(bestX, minX0, maxX0) : (canvasWidth / 2);
+        // Hide thinking status
+        if (statusEl) statusEl.style.display = 'none';
+        
+        return bestFinalScore !== -Infinity ? this.clamp(bestX0, minX0, maxX0) : (canvasWidth / 2);
     }
 
     simulateDrop(x, type, inputFruits, canvasWidth, canvasHeight) {

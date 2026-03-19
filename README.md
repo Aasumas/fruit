@@ -52,7 +52,7 @@ Start with cherries and work your way up to the ultimate coconut!
 ### Web Version (Instant Play)
 1. Clone this repository:
    ```bash
-   git clone https://github.com/yourusername/fruit-merge-game.git
+   git clone https://github.com/aasumas/fruit-merge-game.git
    cd fruit-merge-game
    ```
 
@@ -202,6 +202,6 @@ See the full license at: https://creativecommons.org/licenses/by-nc-sa/4.0/
 
 ---
 
-**Ready to play?** [🎮 Start Game](https://cryptodragonlady.github.io/fruit/) | [📱 Download APK](FruitGame.apk)
+**Ready to play?** [🎮 Start Game](https://aasumas.github.io/fruit/) | [📱 Download APK](FruitGame.apk)
 
 Made with ❤️ and lots of fruit emojis!
