@@ -118,74 +118,69 @@ class AutoPlayer {
         const statusEl = document.getElementById('ai-status');
         if (statusEl) statusEl.style.display = 'block';
 
-        // Deep Planning Configuration
-        const MAX_PLANNING_DEPTH = 50; // Plan through the WHOLE 50-fruit queue!
-        const BEAM_WIDTH = 1; // Pure greedy best-path for performance
-        
-        let bestFinalScore = -Infinity;
-        let bestX0 = canvasWidth / 2;
+        // Beam Search Configuration (High Performance Balancing)
+        const MAX_PLANNING_DEPTH = 5; // Search up to 5 moves deep
+        const BEAM_WIDTH = 4; // Track 4 best candidates at each depth
         
         if (!nextFruits || nextFruits.length === 0) {
             if (statusEl) statusEl.style.display = 'none';
             return canvasWidth / 2;
         }
-        
+
+        // Current candidate pool for the root layer
+        let pool = [];
         const type0 = nextFruits[0];
         const r0 = FRUITS[type0].size / 2;
-        const minX0 = r0;
-        const maxX0 = canvasWidth - r0;
         
-        // Root choices (Current fruit)
-        // Using step 10 for the root to allow deeper search without too much lag
-        for (let x0 = minX0; x0 <= maxX0; x0 += 10) { 
-            const result0 = this.simulateDrop(x0, type0, fruits, canvasWidth, canvasHeight);
-            if (result0.failed) continue;
-
-            let pathScore = result0.score;
-            let currentBoard = result0.fruits;
-            
-            // Lookahead loop (The "Ultimate" Strategy)
-            for (let d = 1; d < Math.min(nextFruits.length, MAX_PLANNING_DEPTH); d++) {
-                const depthType = nextFruits[d];
-                const depthRadius = FRUITS[depthType].size / 2;
-                let bestDepthResult = null;
-                let bestDepthScore = -Infinity;
-                
-                // For each depth, find the single best move to continue this path
-                // Using step 30 for depth sampling to keep total sims around ~200k
-                for (let xd = depthRadius; xd <= canvasWidth - depthRadius; xd += 30) { 
-                    const resD = this.simulateDrop(xd, depthType, currentBoard, canvasWidth, canvasHeight);
-                    if (!resD.failed && resD.score > bestDepthScore) {
-                        bestDepthScore = resD.score;
-                        bestDepthResult = resD;
-                    }
-                }
-                
-                if (bestDepthResult) {
-                    // Accumulate discounted future rewards
-                    pathScore += bestDepthScore * Math.pow(0.95, d); // Slower decay for 50-move plan
-                    currentBoard = bestDepthResult.fruits;
-                } else {
-                    // This path leads to a death eventually
-                    pathScore -= 100000;
-                    break;
-                }
-            }
-
-            // Tie-breaker: center preference
-            const centerDistance = Math.abs(x0 - (canvasWidth / 2));
-            pathScore -= (centerDistance * 0.01);
-
-            if (pathScore > bestFinalScore) {
-                bestFinalScore = pathScore;
-                bestX0 = x0;
+        // Root Layer Sampling
+        for (let x0 = r0; x0 <= canvasWidth - r0; x0 += 10) { 
+            const res = this.simulateDrop(x0, type0, fruits, canvasWidth, canvasHeight);
+            if (!res.failed) {
+                const centerDistance = Math.abs(x0 - (canvasWidth / 2));
+                const tieBreaker = -(centerDistance * 0.05); // Stronger center preference for root
+                pool.push({
+                    x0: x0,
+                    board: res.fruits,
+                    score: res.score + tieBreaker
+                });
             }
         }
-        
-        // Hide thinking status
+
+        // Beam layers: Depth 1 onward
+        for (let d = 1; d < Math.min(nextFruits.length, MAX_PLANNING_DEPTH); d++) {
+            // Prune to BEAM_WIDTH
+            pool.sort((a, b) => b.score - a.score);
+            const candidates = pool.slice(0, BEAM_WIDTH);
+            let nextPool = [];
+            
+            const typeD = nextFruits[d];
+            const rD = FRUITS[typeD].size / 2;
+
+            for (const cand of candidates) {
+                // Heuristic: search narrower as we go deeper to save CPU
+                const step = 20 + (d * 10); 
+                for (let xD = rD; xD <= canvasWidth - rD; xD += step) {
+                    const res = this.simulateDrop(xD, typeD, cand.board, canvasWidth, canvasHeight);
+                    if (!res.failed) {
+                        const discountedScore = res.score * Math.pow(0.85, d);
+                        nextPool.push({
+                            x0: cand.x0, // Carry root move history
+                            board: res.fruits,
+                            score: cand.score + discountedScore
+                        });
+                    }
+                }
+            }
+            if (nextPool.length === 0) break;
+            pool = nextPool;
+        }
+
+        // Result: best x0 from the highest-scoring candidate path
+        pool.sort((a, b) => b.score - a.score);
+        const bestX = pool.length > 0 ? pool[0].x0 : (canvasWidth / 2);
+
         if (statusEl) statusEl.style.display = 'none';
-        
-        return bestFinalScore !== -Infinity ? this.clamp(bestX0, minX0, maxX0) : (canvasWidth / 2);
+        return this.clamp(bestX, r0, canvasWidth - r0);
     }
 
     simulateDrop(x, type, inputFruits, canvasWidth, canvasHeight) {
@@ -196,20 +191,14 @@ class AutoPlayer {
         for (const f of inputFruits) {
             const fRadius = f.size / 2;
             const distanceX = Math.abs(f.x - x);
-            const minDistance = dropRadius + fRadius;
+            const minDistance = dropRadius + fRadius + 0.5; // Match script.js 0.5 buffer
             
-            // If the drop x-coordinate is within horizontal bounds of the fruit f
             if (distanceX < minDistance && f.y > 30) { 
                 const dx2 = distanceX * distanceX;
                 const dist2 = minDistance * minDistance;
-                // Calculate how high up the center of the dropped fruit will be when the edges touch
                 const dy = Math.sqrt(Math.max(0, dist2 - dx2));
-                
-                // The center Y of the new fruit when touching `f` from above
                 const touchY = f.y - dy;
                 
-                // We can't land lower than the highest contact point we find
-                // This correctly identifies the top-most fruit we collide with
                 if (touchY < landY) {
                     landY = touchY;
                     hitFruit = f;
@@ -217,81 +206,68 @@ class AutoPlayer {
             }
         }
         
-        // if (landY < 120) return { failed: true }; // Death penalty - MOVED TO END
+        let score = landY; // Base reward: deeper is better
         
-        let score = landY; // Reward lower drops
-        
-        // NEW: Prioritize empty space for fruits NOT on the board
+        // Bonus for starting a new column in empty space
         const typeExists = inputFruits.some(f => f.type === type);
         const onFloor = Math.abs(landY - (canvasHeight - dropRadius)) < 1;
         if (!typeExists && onFloor) {
-            score += 2000; // Significant bonus for starting a new type in empty floor space
+            score += 3000; 
         }
         
-        // NEW: Vertical Potential Bonus (Rescue buried fruits)
-        // If we drop a fruit in the same vertical column as a matching fruit below us
+        // Vertical Alignment Bonus (Rescue buried fruits)
         for (const f of inputFruits) {
             if (f.type === type && f.y > landY) {
                 const dx = Math.abs(f.x - x);
-                const colWidth = (dropRadius + f.size / 2) * 0.8; // Use slightly narrower column for precision
+                const colWidth = (dropRadius + f.size / 2) * 0.8;
                 if (dx < colWidth) {
-                    // We are in the same relative "column"
-                    // Bonus scales by alignment and prioritizes smaller, harder-to-rescue fruits
                     const alignmentFactor = 1 - (dx / colWidth);
-                    score += 600 * alignmentFactor * (5 - type); 
+                    score += 1500 * alignmentFactor * (5 - type); // Increased from 600
                 }
             }
         }
 
-        // NEW: Predecessor Stacking Bonus (Strategic chaining)
-        // If we drop a fruit on top of a fruit that is the NEXT type in the cycle
-        // e.g. Cherry (0) on top of Strawberry (1)
+        // Strategy: Predecessor Stacking (Chain Setup)
         for (const f of inputFruits) {
             if (f.type === type + 1 && f.y > landY) {
                 const dx = Math.abs(f.x - x);
                 const colWidth = (dropRadius + f.size / 2) * 0.9;
                 if (dx < colWidth) {
                     const alignmentFactor = 1 - (dx / colWidth);
-                    // Strong bonus for setting up a chain reaction
-                    score += 400 * alignmentFactor * (5 - type);
+                    score += 1000 * alignmentFactor * (5 - type); // Increased from 400
                 }
             }
         }
         
-        // Reward exact alignment ONLY if we directly contact the identical fruit
-        // This solves the issue where AI targets a covered fruit
+        // Direct Contact Reward
         if (hitFruit && hitFruit.type === type && Math.abs(hitFruit.x - x) < 5) {
-            score += 1000;
+            score += 2000; // Increased from 1000
         } else if (hitFruit && Math.abs(hitFruit.x - x) >= 5) {
-            // NUDGE HEURISTIC: Dropping off-center pushes hitFruit and slides the dropped fruit
-            const pushDir = Math.sign(hitFruit.x - x); // Direction hitFruit gets pushed
-            const slideDir = Math.sign(x - hitFruit.x); // Direction we slide
-            
-            // Mass ratio determines if we push them, or they push us
+            // Nudge/Slide heuristics...
+            const pushDir = Math.sign(hitFruit.x - x);
+            const slideDir = Math.sign(x - hitFruit.x);
             const massRatio = Math.pow(FRUITS[type].size / FRUITS[hitFruit.type].size, 2);
             
             if (massRatio >= 0.8) { 
-                // We are heavy enough to push hitFruit. Does this push it towards a match?
                 for (const other of inputFruits) {
                     if (other !== hitFruit && other.type === hitFruit.type) {
                         const dirToOther = Math.sign(other.x - hitFruit.x);
                         if (dirToOther === pushDir || dirToOther === 0) {
                             const dist = Math.abs(other.x - hitFruit.x);
                             if (dist > 0 && dist < 200) {
-                                score += 600 * (hitFruit.type + 1); // Reward nudging!
+                                score += 800 * (hitFruit.type + 1);
                             }
                         }
                     }
                 }
             } else {
-                // We are small, so we slide down hitFruit. Does this slide us towards our match?
                 for (const other of inputFruits) {
                     if (other.type === type && other.y > hitFruit.y) { 
                         const dirToOther = Math.sign(other.x - x);
                         if (dirToOther === slideDir || dirToOther === 0) {
                             const dist = Math.abs(other.x - x);
                             if (dist < 150) {
-                                score += 400 * (type + 1); // Reward slide merging!
+                                score += 600 * (type + 1);
                             }
                         }
                     }
@@ -303,7 +279,7 @@ class AutoPlayer {
         let activeFruit = { x, y: landY, type, size: FRUITS[type].size };
         let merged = true;
         
-        // Resolve recursive chain merges exactly as the evolution path outlines
+        // Resolve recursive chain merges
         while (merged) {
             merged = false;
             let mergeTargetIdx = -1;
@@ -323,9 +299,8 @@ class AutoPlayer {
                 const target = newFruits[mergeTargetIdx];
                 newFruits.splice(mergeTargetIdx, 1);
                 
-                // Huge exponential reward for successfully modeling merges in our simulation
-                // Increased base to 2.0 and multiplier to 10000 for high-tier prioritization
-                score += 10000 * Math.pow(2.0, activeFruit.type); 
+                // Exponential reward for merges (Base 2.5 and higher multiplier)
+                score += 25000 * Math.pow(2.5, activeFruit.type); 
                 
                 const nextType = activeFruit.type + 1;
                 activeFruit = {
@@ -338,123 +313,73 @@ class AutoPlayer {
             }
         }
         
-        // Evaluate grouped adjacent evolution structure
+        // Adjacency Evaluation
         for (const f of newFruits) {
             const dist = Math.hypot(f.x - activeFruit.x, f.y - activeFruit.y);
-            const maxAdjacencyDist = activeFruit.size/2 + f.size/2 + 25;
-            if (dist > 0 && dist < maxAdjacencyDist) { // > 0 to ignore self if somehow included
-                if (f.type === activeFruit.type) score += 1000; // Reward being very close to identical fruit even if it didn't perfectly merge in simulation
-                else if (f.type === activeFruit.type + 1) score += 500;
-                else if (f.type === activeFruit.type - 1) score += 300;
-                else if (f.type > activeFruit.type) score += 100;
-                else score -= 200;
+            const maxAdjacencyDist = activeFruit.size/2 + f.size/2 + 30; // Slightly more generous
+            if (dist > 0 && dist < maxAdjacencyDist) {
+                if (f.type === activeFruit.type) score += 2000;
+                else if (f.type === activeFruit.type + 1) score += 1000;
+                else if (f.type === activeFruit.type - 1) score += 500;
+                else if (f.type > activeFruit.type) score += 200;
             }
         }
         
-        // Only add to board if it's NOT the final vanishing fruit (Coconut)
         if (activeFruit.type < FRUITS.length - 1) {
             newFruits.push(activeFruit);
         } else {
-            // COCONUT VANISH BONUS: Clearing the board is worth a massive amount
-            score += 100000; 
+            score += 500000; // Massively reward clearing the board
         }
         
-        // FINAL DEATH PENALTY CHECK: Now that we've accounted for merges
-        // We only fail if the board is STILL too high after all possible clears
+        // Global Death Penalty
         const highestFruitY = newFruits.reduce((minY, f) => Math.min(minY, f.y - f.size/2), canvasHeight);
-        if (highestFruitY < 120) return { failed: true };
+        if (highestFruitY < 120) return { failed: true, score: -1000000 };
         
-        // Global board evaluation: penalize identical large fruits that are far apart
-        const typeGroups = {};
-        for (const f of newFruits) {
-            if (!typeGroups[f.type]) typeGroups[f.type] = [];
-            typeGroups[f.type].push(f);
-        }
-        
-        for (const type in typeGroups) {
-            const t = parseInt(type);
-            const group = typeGroups[type];
-            // Only penalize spreading for larger fruits (type 3=Grape and above)
-            if (t >= 3 && group.length > 1) { 
-                let maxDist = 0;
-                for (let i=0; i<group.length; i++) {
-                    for (let j=i+1; j<group.length; j++) {
-                        const distX = Math.abs(group[i].x - group[j].x); // Horizontal spread penalty
-                        if (distX > maxDist) maxDist = distX;
-                    }
-                }
-                // Massive penalty based on horizontal spread and fruit size
-                // E.g. lemons (type 5) spreading 200px -> penalty = 200 * 5 * 3 = -3000
-                score -= maxDist * t * 3;
-            }
-        }
-        
-        // Suika-style advanced heuristics: Size-sorting and Board Height
+        // Global Board Evaluation
         for (let i = 0; i < newFruits.length; i++) {
             const f1 = newFruits[i];
             
-            // 1. Exponential Height Penalty: CRITICAL to prevent towering.
-            // Game over line is at y=60. Danger mode starts after 0.5s above that.
-            // We penalize heavily as we approach or cross y=120 (approximate buffer).
-            if (f1.y < 450) {
-                // As y gets smaller (closer to top), penalty grows significantly
-                // Using (y-60) to measure distance to danger line
+            // 1. Exponential Height Penalty (Aggressive)
+            if (f1.y < 500) {
                 const distToDanger = Math.max(1, f1.y - 60);
-                score -= Math.pow(450 / distToDanger, 2); 
+                score -= Math.pow(600 / distToDanger, 2.5); // Steeper penalty curve
             }
 
-            // 2. Board Flatness: Identify "towers" and "holes"
-            // We want to reward filling holes and penalize creating high peaks.
-            // (Heuristic: already covered by landY score and height penalty, 
-            // but we add a specific reward for keeping the surface level)
-
-            // NEW 3. Size Gradient: Organize fruits by type horizontally
-            // Larger fruits -> Right, Smaller fruits -> Left
-            // This creates a natural "slope" that facilitates cascading merges
-            const targetXRatio = f1.type / (FRUITS.length - 1);
-            const targetX = targetXRatio * canvasWidth;
-            score -= Math.abs(f1.x - targetX) * 0.5; // Gentle pull towards side
+            // 2. Size Gradient (L->R: Small -> Big)
+            const targetX = (f1.type / (FRUITS.length - 1)) * canvasWidth;
+            score -= Math.abs(f1.x - targetX) * 1.5; // Stronger pull
             
-            // 4. Buried Small Fruit Penalty
+            // 3. Holes / Buried Small Fruit Penalty (CRITICAL for Tetris-like efficiency)
             for (let j = i + 1; j < newFruits.length; j++) {
                 const f2 = newFruits[j];
                 const dx = Math.abs(f1.x - f2.x);
                 const avgSize = (f1.size + f2.size) / 2;
                 
-                // If they are vertically aligned (sharing the same column)
-                if (dx < avgSize) {
-                    // Penalize exponentially if the fruit on TOP is LARGER than the fruit on BOTTOM
-                    // y=0 is top, y=canvasHeight is bottom. f1.y > f2.y means f1 is below f2.
+                if (dx < avgSize * 0.9) {
                     if (f1.y > f2.y && f1.type < f2.type) { 
-                        // f1 is under f2, and f1 is smaller
-                        score -= 1000 * Math.pow(2, f2.type - f1.type);
+                        // f1 buried beneath larger f2
+                        score -= 5000 * Math.pow(3, f2.type - f1.type);
                     } else if (f2.y > f1.y && f2.type < f1.type) {
-                        // f2 is under f1, and f2 is smaller
-                        score -= 1000 * Math.pow(2, f1.type - f2.type);
+                        // f2 buried beneath larger f1
+                        score -= 5000 * Math.pow(3, f1.type - f2.type);
                     }
                 }
             }
         }
 
-        // Global Flatness Heuristic: Calculate height variance across bins
-        const binCount = 8;
+        // Global Flatness (Variance)
+        const binCount = 6;
         const binWidth = canvasWidth / binCount;
         const columnHeights = new Array(binCount).fill(canvasHeight);
-        
         for (const f of newFruits) {
             const binIdx = Math.floor(this.clamp(f.x, 0, canvasWidth - 1) / binWidth);
             const topY = f.y - f.size / 2;
-            if (topY < columnHeights[binIdx]) {
-                columnHeights[binIdx] = topY;
-            }
+            if (topY < columnHeights[binIdx]) columnHeights[binIdx] = topY;
         }
-        
         const avgHeight = columnHeights.reduce((a, b) => a + b, 0) / binCount;
         let variance = 0;
-        for (const h of columnHeights) {
-            variance += Math.pow(h - avgHeight, 2);
-        }
-        score -= Math.sqrt(variance / binCount) * 5; // Reduced weight from 10 to 5 to allow for gradient slope
+        for (const h of columnHeights) variance += Math.pow(h - avgHeight, 2);
+        score -= Math.sqrt(variance / binCount) * 10;
         
         return { failed: false, score, fruits: newFruits };
     }
